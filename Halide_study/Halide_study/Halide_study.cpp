@@ -21,10 +21,10 @@ int main(int argc, char **argv) {
 	Func f;
 	RDom r(0, input.width());
 	f(y, c) = sum(cast<uint32_t>(input(r, y, c)));
-	f.parallel(y);
+	//f.parallel(y);
 	//f.trace_stores();
 
-	printf("%d, %d, %d\n", input(0, 10, 0), input(0, 10, 1), input(0, 10, 2));
+	//printf("%d, %d, %d\n", input(0, 10, 0), input(0, 10, 1), input(0, 10, 2));
 
 	Halide::Image<uint32_t> output = f.realize(3, 3);
 
@@ -33,6 +33,25 @@ int main(int argc, char **argv) {
 			// We can access a pixel of an Image object using similar
 			// syntax to defining and using functions.
 			printf("(%d, %d) = %d\n", i, j, output(i, j));
+		}
+	}
+
+	// check input
+	for (int j = 0; j < 3; j++) 
+	{
+		uint32_t c[3] = { 0 };
+		for (int i = 0; i < input.width(); i++) 
+		{
+			for (int k = 0; k < 3; k++)
+			{
+				//cout << int(input(i, j, k)) << ", ";
+				c[k] += input(i, j, k);
+			}
+		}
+		for (int k = 0; k < 3; k++)
+		{
+			printf("(%d, %d) = %d\n", j, k, c[k]);
+			assert(c[k] == output(j, k));
 		}
 	}
 
