@@ -13,6 +13,42 @@ using namespace Halide;
 using namespace Halide::Tools;
 using namespace std;
 
+#define DO_ASSERT
+
+Halide::Image<uint32_t> sumImageRow(Halide::Image<uint8_t> input)
+{
+	Var x("x"), y("y"), c("c");
+	Func f;
+	RDom r(0, input.width());
+	f(y, c) = sum(cast<uint32_t>(input(r, y, c)));
+
+	Halide::Image<uint32_t> output = f.realize(input.height(), 3);
+
+
+#ifdef DO_ASSERT
+	// assert correctness
+	for (int j = 0; j < input.height(); j++)
+	{
+		uint32_t c[3] = { 0 };
+		for (int i = 0; i < input.width(); i++)
+		{
+			for (int k = 0; k < 3; k++)
+			{
+				c[k] += input(i, j, k);
+			}
+		}
+		for (int k = 0; k < 3; k++)
+		{
+			//printf("(%d, %d) = %d\n", j, k, c[k]);
+			assert(c[k] == output(j, k));
+		}
+	}
+#endif // DO_ASSERT
+
+	return output;
+}
+
+
 int main(int argc, char **argv) {
 	Halide::Image<uint8_t> input = load_image("pics/1.png");
 
