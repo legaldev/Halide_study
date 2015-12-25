@@ -15,13 +15,15 @@ using namespace std;
 
 #define DO_ASSERT
 
-Halide::Image<uint32_t> sumImageRow(Halide::Image<uint8_t> input)
+Halide::Image<uint32_t> sumImageRow(Halide::Image<uint8_t>& input)
 {
 	Var x("x"), y("y"), c("c");
 	Func f;
 	RDom r(0, input.width());
 	f(y, c) = sum(cast<uint32_t>(input(r, y, c)));
-
+	f.trace_stores();
+	f.parallel(y);
+	//f.trace_stores();
 	Halide::Image<uint32_t> output = f.realize(input.height(), 3);
 
 
@@ -50,48 +52,16 @@ Halide::Image<uint32_t> sumImageRow(Halide::Image<uint8_t> input)
 
 
 int main(int argc, char **argv) {
-	Halide::Image<uint8_t> input = load_image("pics/1.png");
-
-	//save_image(input, "1.png");
-	Var x("x"), y("y"), c("c");
-	Func f;
-	RDom r(0, input.width());
-	f(y, c) = sum(cast<uint32_t>(input(r, y, c)));
-	//f.parallel(y);
-	//f.trace_stores();
-
-	//printf("%d, %d, %d\n", input(0, 10, 0), input(0, 10, 1), input(0, 10, 2));
-
-	Halide::Image<uint32_t> output = f.realize(3, 3);
-
-	for (int j = 0; j < output.height(); j++) {
-		for (int i = 0; i < output.width(); i++) {
-			// We can access a pixel of an Image object using similar
-			// syntax to defining and using functions.
-			printf("(%d, %d) = %d\n", i, j, output(i, j));
-		}
-	}
-
-	// check input
-	for (int j = 0; j < 3; j++) 
+	Halide::Image<uint8_t> input[3];
+	char filename[256];
+	for (int i = 0; i < 3; ++i)
 	{
-		uint32_t c[3] = { 0 };
-		for (int i = 0; i < input.width(); i++) 
-		{
-			for (int k = 0; k < 3; k++)
-			{
-				//cout << int(input(i, j, k)) << ", ";
-				c[k] += input(i, j, k);
-			}
-		}
-		for (int k = 0; k < 3; k++)
-		{
-			printf("(%d, %d) = %d\n", j, k, c[k]);
-			assert(c[k] == output(j, k));
-		}
+		sprintf_s(filename, "pics/%d.png", i+1);
+		input[i] = load_image(filename);
 	}
 
-	printf("%d, %d\n", input.width(), input.height());
+	auto sum1 = sumImageRow(input[0]);
+	printf("%d, %d\n", sum1.width(), sum1.height());
 
 	cout << "Success!" << endl;
 
