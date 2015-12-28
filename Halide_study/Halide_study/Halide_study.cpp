@@ -17,7 +17,7 @@ using namespace std;
 
 //#define DO_ASSERT
 
-Halide::Image<uint32_t> sumImageRow(Halide::Image<uint8_t>& input)
+Halide::Image<uint32_t> sumImageRow(const Halide::Image<uint8_t>& input)
 {
 	Var x("x"), y("y"), c("c");
 	Func f;
@@ -42,7 +42,7 @@ Halide::Image<uint32_t> sumImageRow(Halide::Image<uint8_t>& input)
 		for (int k = 0; k < 3; k++)
 		{
 			//printf("(%d, %d) = %d\n", j, k, c[k]);
-			assert(c[k] == output(j, k));
+			assert(c[k] == output(k, j));
 		}
 	}
 #endif // DO_ASSERT
@@ -50,6 +50,39 @@ Halide::Image<uint32_t> sumImageRow(Halide::Image<uint8_t>& input)
 	return output;
 }
 
+Halide::Image<uint32_t> sumImageRowWithFilter(const Halide::Image<uint8_t>& input, 
+	const Halide::Image<uint8_t>& filter)
+{
+	Var x("x"), y("y"), c("c");
+	Func f;
+	RDom r(0, input.width());
+	f(c, y) = sum(cast<uint32_t>(input(r, y, c)) * filter(r, y));
+	f.parallel(y);
+	//f.trace_stores();
+	Halide::Image<uint32_t> output = f.realize(3, input.height());
+
+//#ifdef DO_ASSERT
+	// assert correctness
+	for (int j = 0; j < input.height(); j++)
+	{
+		uint32_t c[3] = { 0 };
+		for (int i = 0; i < input.width(); i++)
+		{
+			for (int k = 0; k < 3; k++)
+			{
+				c[k] += input(i, j, k) * filter(i, j);
+			}
+		}
+		for (int k = 0; k < 3; k++)
+		{
+			//printf("(%d, %d) = %d, %d\n", j, k, c[k], output(k, j));
+			assert(c[k] == output(k, j));
+		}
+	}
+//#endif // DO_ASSERT
+
+	return output;
+}
 
 tuple<int, int> findHeadAndTail(const Halide::Image<uint32_t>& sum1, const Halide::Image<uint32_t>& sum2)
 {
@@ -153,6 +186,76 @@ int matchImages(const Halide::Image<uint32_t>& top, const Halide::Image<uint32_t
 	return res;
 }
 
+
+// calc average match of each row
+// backgroud color will be filtered
+int avgMatchImages(const Halide::Image<uint8_t>& top, const Halide::Image<uint8_t>& down)
+{
+	const int width = min(top.width(), down.width()), height = min(top.height(), down.height());
+
+	int res = 0;
+	float maxm = 0;
+	for (int h = 1; h <= height; ++h)
+	{
+		int match = 0;
+		for (int y = 0; y < h; ++y)
+		{
+			for (int x = 0; x < width; ++x)
+			{
+				int topy = height - h + y;
+				if (top(x, topy, 0) == down(x, y, 0) && 
+					top(x, topy, 1) == down(x, y, 1) && 
+					top(x, topy, 2) == down(x, y, 2))
+				{
+					++match;
+				}
+			}
+			
+		}
+		float avgm = float(match) / (h * width);
+		if (avgm > maxm)
+		{
+			maxm = avgm;
+			res = max(res, h);
+		}
+	}
+
+	printf("maxm = %f\n", maxm);
+	return res;
+}
+
+// 1. find the equal pixel
+// 2. match without eht equal pixel
+int matchImages(const Halide::Image<uint8_t>& top, const Halide::Image<uint8_t>& down)
+{
+	const int width = min(top.width(), down.width()), height = min(top.height(), down.height());
+	Image<uint8_t> filter(width, height);
+
+	for (int y = 0; y < top.height(); ++y)
+	{
+		for (int x = 0; x < top.width(); ++x)
+		{
+			if (top(x, y, 0) == down(x, y, 0) && top(x, y, 1) == down(x, y, 1) && top(x, y, 2) == down(x, y, 2))
+				filter(x, y) = 0;
+			else
+				filter(x, y) = 1;
+		}
+	}
+
+	Func f;
+	Var x("x"), y("y"), c("c");
+	f(x, y) = cast<uint8_t>(filter(x, y) * 255);
+	Image<uint8_t> output = f.realize(filter.width(), filter.height());
+	save_image(output, "filter.png");
+
+	//sum again
+	auto sum1 = sumImageRowWithFilter(top, filter);
+	auto sum2 = sumImageRowWithFilter(down, filter);
+
+	return matchImages(sum1, sum2);
+
+}
+
 int main(int argc, char **argv) {
 	const int num = 3;
 	Halide::Image<uint8_t> input[num];
@@ -194,12 +297,15 @@ int main(int argc, char **argv) {
 	}
 
 	// find match bwtween cuts
-	for (int i = 0; i < num-1; ++i)
+	int match[num - 1] = { 0 };
+	int matchall = 0;
+	for (int i = 0; i < num; ++i)
 	{
-		int match = matchImages(cut_sums[i], cut_sums[i + 1]);
-		cout << "match = " << match << endl;
+		match[i] = avgMatchImages(cuts[i], cuts[i + 1]);
+		matchall += match[i];
+		cout << "match = " << match[i] << endl;
 	}
-	exit(0);
+// 	exit(0);
 
 	// joint all the cut images
 	Func joint("joint");
@@ -207,23 +313,25 @@ int main(int argc, char **argv) {
 	joint(x, y, c) = cast<uint8_t>(0);
 
 	const int res_width = width;
-	const int res_height = height * 3 - (head + tail) * 2;
+	const int res_height = height * 3 - (head + tail) * 2 - matchall;
 
 	//header
 	RDom headr(0, head);
 	joint(x, headr, c) = input[0](x, headr, c);
 
 	//image
-	RDom imgr(0, cuts[0].height());
+	int curh = head;
 	for (int i = 0; i < num; ++i)
 	{
-		joint(x, head + cuts[0].height() * i + imgr, c) = cuts[i](x, imgr, c);
+		int imgh = cuts[0].height() - match[i];
+		RDom imgr(0, imgh);
+		joint(x, curh + imgr, c) = cuts[i](x, imgr, c);
+		curh += imgh;
 	}
 
 	//tail
 	RDom tailr(0, tail);
 	joint(x, res_height - tail - 1 + tailr, c) = input[0](x, height - tail - 1 + tailr, c);
-
 
 	Halide::Image<uint8_t> res = joint.realize(res_width, res_height, channel);
 	save_image(res, "res.png");
