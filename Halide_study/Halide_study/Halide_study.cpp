@@ -3,15 +3,10 @@
 // This lesson demonstrates basic usage of Halide as a JIT compiler for imaging.
 // The only Halide header file you need is Halide.h. It includes all of Halide.
 #include "stdafx.h"
-#include "Halide.h"
-#include <iostream>
-#include <stdio.h>
-#include <ctime>
-#include <vector>
 
 
 // Include some support code for loading pngs.
-#include "halide_image_io.h"
+
 using namespace Halide;
 using namespace Halide::Tools;
 using namespace std;
@@ -87,27 +82,31 @@ Halide::Image<uint32_t> sumImageRowWithFilter(const Halide::Image<uint8_t>& inpu
 	return output;
 }
 
-Halide::Image<uint32_t> sumImageRowBlock(const Halide::Image<uint8_t>& input, int block)
+Halide::Image<uint32_t> sumImageRowBlock(const Halide::Image<uint8_t>& input, int block_width)
 {
-	Var x("x"), y("y"), c("c");
-	Func f("block");
-	f(x, y, c) = cast<uint32_t>(0);
-	int block_width = input.width() / block;
-	RDom r(0, block_width);
-	for (int i = 0; i < block-1; ++i)
-	{
-		f(i, y, c) = sum(cast<uint32_t>(input(block_width * i + r, y, c)));
-	}
-	RDom r2(block_width * (block-1), input.width() - block_width * (block - 1));
-	f(block - 1, y, c) = sum(cast<uint32_t>(input(r2, y, c)));
+// 	Var x("x"), y("y"), c("c");
+// 	Func f("block");
+// 	f(x, y, c) = cast<uint32_t>(0);
+// 	int block_width = input.width() / block;
+// 	RDom r(0, block_width);
+// 	for (int i = 0; i < block-1; ++i)
+// 	{
+// 		f(i, y, c) = sum(cast<uint32_t>(input(block_width * i + r, y, c)));
+// 	}
+// 	RDom r2(block_width * (block-1), input.width() - block_width * (block - 1));
+// 	f(block - 1, y, c) = sum(cast<uint32_t>(input(r2, y, c)));
+// 
+// 	//f.parallel(y);
+// 	//f.trace_stores();
+// 	Halide::Image<uint32_t> output = f.realize(block, input.height(), 3);
+// 	cout << "block done" << endl;
 
-	//f.parallel(y);
-	//f.trace_stores();
-	Halide::Image<uint32_t> output = f.realize(block, input.height(), 3);
-	cout << "block done" << endl;
+	int block = input.width() / block_width;
+	if (input.width() > block * block_width)
+		++block;
 
-#ifdef DO_ASSERT
-	// assert correctness
+	Image<uint32_t> output(block, input.height(), input.channels());
+
 	for (int j = 0; j < input.height(); j++)
 	{
 		for (int b = 0; b < block - 1; ++b)
@@ -123,12 +122,12 @@ Halide::Image<uint32_t> sumImageRowBlock(const Halide::Image<uint8_t>& input, in
 			for (int k = 0; k < 3; k++)
 			{
 				//printf("(%d, %d) = %d, %d\n", j, k, c[k], output(k, j));
-				assert(c[k] == output(b, j, k));
+				output(b, j, k) = c[k];
+				//assert(c[k] == output(b, j, k));
 			}
 		}
 
 	}
-#endif // DO_ASSERT
 
 	return output;
 }
@@ -352,10 +351,10 @@ int main(int argc, char **argv) {
 	{
 		cuts[i] = cutHeadAndTail(input[i], head, tail);
 		//cut_sums[i] = cutHeadAndTail(sums[i], head, tail);
-		cut_sums[i] = sumImageRowBlock(cuts[i], input[i].width());
+		cut_sums[i] = sumImageRowBlock(cuts[i], 20);
 
-		sprintf_s(filename, "out%d.png", i);
-		save_image(cuts[i], filename);
+		//sprintf_s(filename, "out%d.png", i);
+		//save_image(cuts[i], filename);
 	}
 
 	end = clock();
@@ -364,9 +363,9 @@ int main(int argc, char **argv) {
 	begin = clock();
 
 	// find match bwtween cuts
-	int match[num - 1] = { 0 };
+	int match[num] = { 0 };
 	int matchall = 0;
-	for (int i = 0; i < num; ++i)
+	for (int i = 0; i < num-1; ++i)
 	{
 		//match[i] = avgMatchImages(cuts[i], cuts[i + 1]);
 		match[i] = avgMatchImages(cut_sums[i], cut_sums[i + 1]);

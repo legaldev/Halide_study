@@ -10,6 +10,12 @@
 #include <stdio.h>
 #include <tchar.h>
 
+#include <iostream>
+#include <ctime>
+#include <vector>
+#include "Halide.h"
+#include "halide_image_io.h"
+
 
 
 // TODO: reference additional headers your program requires here
