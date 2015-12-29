@@ -13,6 +13,7 @@
 #include <iostream>
 #include <ctime>
 #include <vector>
+#include <string>
 #include "Halide.h"
 #include "halide_image_io.h"
 
