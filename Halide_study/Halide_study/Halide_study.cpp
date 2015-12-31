@@ -5,7 +5,6 @@
 #include "stdafx.h"
 #include "ImageMatchMerge.h"
 
-// Include some support code for loading pngs.
 
 int main(int argc, char **argv)
 {

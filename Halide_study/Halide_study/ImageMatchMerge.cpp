@@ -146,6 +146,28 @@ Halide::Image<T> ImageMatchMerge::cutHeadAndTail(const Halide::Image<T>& input, 
 }
 
 template<typename T>
+inline float calcAvgMatch(const Halide::Image<T>& top, const Halide::Image<T>& down, int offset)
+{
+	const int height = min(top.height() - offset, down.height());
+	const int width = min(top.width(), down.width());
+	int match = 0;
+	for (int y = 0; y < height; ++y, ++offset)
+	{
+		for (int x = 0; x < width; ++x)
+		{
+			if (top(x, offset, 0) == down(x, y, 0) &&
+				top(x, offset, 1) == down(x, y, 1) &&
+				top(x, offset, 2) == down(x, y, 2))
+			{
+				++match;
+			}
+		}
+
+	}
+	return float(match) / (height * width);
+}
+
+template<typename T>
 int ImageMatchMerge::avgMatchImages(const Halide::Image<T>& top, const Halide::Image<T>& down)
 {
 	const int width = min(top.width(), down.width()), height = min(top.height(), down.height());
@@ -154,22 +176,7 @@ int ImageMatchMerge::avgMatchImages(const Halide::Image<T>& top, const Halide::I
 	float maxm = 0;
 	for (int h = 1; h <= height; ++h)
 	{
-		int match = 0;
-		for (int y = 0; y < h; ++y)
-		{
-			for (int x = 0; x < width; ++x)
-			{
-				int topy = height - h + y;
-				if (top(x, topy, 0) == down(x, y, 0) &&
-					top(x, topy, 1) == down(x, y, 1) &&
-					top(x, topy, 2) == down(x, y, 2))
-				{
-					++match;
-				}
-			}
-
-		}
-		float avgm = float(match) / (h * width);
+		float avgm = calcAvgMatch(top, down, height - h);
 		if (avgm >= maxm)
 		{
 			maxm = avgm;
@@ -199,6 +206,8 @@ bool ImageMatchMerge::run()
 	{
 		input[i] = load_image(m_image_files[i]);
 	}
+
+	printf("channels %d\n", input[0].channels());
 
 	end = clock();
 	elapsed_time = float(end - begin) / CLOCKS_PER_SEC;
