@@ -125,6 +125,54 @@ std::tuple<int, int> ImageMatchMerge::findHeadAndTail(const Halide::Image<uint32
 	return tuple<int, int>(head, tail);
 }
 
+std::tuple<int, int> findHeadAndTail2(const Halide::Image<uint32_t>& sum1,
+	const Halide::Image<uint32_t>& sum2)
+{
+	const int height = min(sum1.height(), sum2.height());
+	const int width = min(sum1.width(), sum2.width());
+
+	int head = 0, tail = height - 1;
+	for (; head < height; ++head)
+	{
+		int match = 0;
+		for (int x = 0; x < width; ++x)
+		{
+			if (sum1(x, head, 0) == sum2(x, head, 0) &&
+				sum1(x, head, 1) == sum2(x, head, 1) &&
+				sum1(x, head, 2) == sum2(x, head, 2))
+				++match;
+		}
+
+		if ((float)match / width < 0.5)
+		{
+			--head;
+			break;
+		}
+	}
+
+	for (; tail >= 0; --tail)
+	{
+		int match = 0;
+		for (int x = 0; x < width; ++x)
+		{
+			if (sum1(x, tail, 0) == sum2(x, tail, 0) &&
+				sum1(x, tail, 1) == sum2(x, tail, 1) &&
+				sum1(x, tail, 2) == sum2(x, tail, 2))
+				++match;
+		}
+
+		if ((float)match / width < 0.9)
+		{
+			++tail;
+			break;
+		}
+	}
+
+	tail = sum1.height() - 1 - tail;
+
+	return tuple<int, int>(head, tail);
+}
+
 template<typename T>
 Halide::Image<T> ImageMatchMerge::cutHeadAndTail(const Halide::Image<T>& input, int headLen, int tailLen)
 {
@@ -216,7 +264,10 @@ bool ImageMatchMerge::run()
 
 	// sum image block 
 	for (int i = 0; i < num; ++i)
-		sums[i] = sumImageRow(input[i]);
+	{
+		//sums[i] = sumImageRow(input[i]);
+		sums[i] = sumImageRowBlock(input[i], 10);
+	}
 
 	end = clock();
 	elapsed_time = float(end - begin) / CLOCKS_PER_SEC;
@@ -225,13 +276,13 @@ bool ImageMatchMerge::run()
 
 	const int width = input[0].width(), height = input[0].height(), channel = input[0].channels();
 
-	int head = 0, tail = 0;
+	int head = height, tail = height;
 	for (int i = 0; i < num - 1; ++i)
 	{
-		auto ht = findHeadAndTail(sums[0], sums[1]);
+		auto ht = findHeadAndTail2(sums[0], sums[1]);
 
-		head = max(head, get<0>(ht));
-		tail = max(tail, get<1>(ht));
+		head = min(head, get<0>(ht));
+		tail = min(tail, get<1>(ht));
 	}
 
 	printf("head = %d, tail = %d\n", head, tail);
